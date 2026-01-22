@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Global Chat</title>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+<style>
+*{box-sizing:border-box;font-family:Arial}
+body{
+  margin:0;
+  background:#0b141a;
+  height:100vh;
+  display:flex;
+  justify-content:center;
+}
+.chat-app{
+  width:100%;
+  max-width:420px;
+  display:flex;
+  flex-direction:column;
+}
+.chat-header{
+  background:#202c33;
+  color:#e9edef;
+  padding:12px;
+  display:flex;
+  justify-content:space-between;
+}
+.username-top{
+  color:#00a884;
+  cursor:pointer;
+  font-size:13px;
+}
+.chat-body{
+  flex:1;
+  padding:10px;
+  overflow-y:auto;
+}
+.bubble{
+  max-width:80%;
+  padding:8px 12px;
+  margin-bottom:8px;
+  border-radius:8px;
+  color:#e9edef;
+  animation:fade .25s ease;
+  cursor:pointer;
+}
+.me{background:#005c4b;margin-left:auto}
+.other{background:#202c33}
+
+.exclusive{
+  background:linear-gradient(135deg,#ff00cc,#3333ff);
+  animation:glow 1.5s infinite alternate;
+}
+
+.username{
+  font-size:11px;
+  color:#aebac1;
+  display:flex;
+  align-items:center;
+  gap:4px;
+}
+.verify{width:12px;height:12px}
+
+.chat-footer{
+  display:flex;
+  gap:8px;
+  padding:10px;
+  background:#202c33;
+}
+.chat-footer input{
+  flex:1;
+  border:none;
+  border-radius:20px;
+  padding:10px;
+  background:#2a3942;
+  color:white;
+}
+.chat-footer button{
+  width:40px;
+  border:none;
+  border-radius:50%;
+  background:#00a884;
+  color:white;
+  font-size:16px;
+}
+
+@keyframes glow{
+  from{box-shadow:0 0 5px #ff00cc}
+  to{box-shadow:0 0 15px #3333ff}
+}
+@keyframes fade{
+  from{opacity:0;transform:translateY(10px)}
+  to{opacity:1;transform:translateY(0)}
+}
+</style>
+</head>
+<body>
+
+<div class="chat-app">
+  <div class="chat-header">
+    <span>GglChat</span>
+    <span id="topName" class="username-top" onclick="changeName()"></span>
+  </div>
+
+  <div id="chat" class="chat-body"></div>
+
+  <div class="chat-footer">
+    <input id="msg" placeholder="Ketik pesan...">
+    <button onclick="send()">➤</button>
+  </div>
+</div>
+
+<script>
+// ============ FIREBASE ============
+const firebaseConfig = {
+  apiKey: "AIzaSyDcs07CTDdmbmeVFJdRMWdQik88dFlDWOc",
+  authDomain: "gdjdjdj.firebaseapp.com",
+  databaseURL: "https://gdjdjdj-default-rtdb.firebaseio.com",
+  projectId: "gdjdjdj",
+  storageBucket: "gdjdjdj.firebasestorage.app",
+  messagingSenderId: "300888275351",
+  appId: "1:300888275351:web:399b7e4daaf6b3b61e6cd2",
+  measurementId: "G-6P90X4NWEV"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+// ============ ADMIN ============
+const VERIFIED_USERS = {
+  "RIFQY": true
+};
+const EXCLUSIVE_USERS = {
+  "RIFQY": true
+};
+const VERIFY_ICON =
+"https://i.ibb.co.com/prJ0ppzm/New-Project-48-40-BF4-BE.png";
+
+// ============ UID ============
+let uid = localStorage.getItem("uid");
+if(!uid){
+  uid="uid_"+Math.random().toString(36).slice(2,10);
+  localStorage.setItem("uid",uid);
+}
+
+// ============ USERNAME (1x SAJA) ============
+let username = localStorage.getItem("name");
+let nameChanged = localStorage.getItem("nameChanged"); // null / true
+
+function updateTop(){
+  topName.innerText = username + (nameChanged ? " 🔒" : " ✏️");
+}
+
+async function initUser(){
+  if(!username){
+    while(true){
+      let t="User"+Math.floor(Math.random()*9999);
+      let s=await db.ref("users/"+t).get();
+      if(!s.exists()){
+        username=t;
+        await db.ref("users/"+t).set(true);
+        localStorage.setItem("name",username);
+        break;
+      }
+    }
+  }
+  updateTop();
+}
+initUser();
+
+async function changeName(){
+  if(nameChanged){
+    alert("❌ Username hanya bisa diganti 1x");
+    return;
+  }
+
+  let n=prompt("Masukkan username baru (1x saja):");
+  if(!n)return;
+  n=n.trim();
+  if(n.length<3)return alert("Minimal 3 karakter");
+
+  let s=await db.ref("users/"+n).get();
+  if(s.exists())return alert("Username sudah dipakai");
+
+  await db.ref("users/"+username).remove();
+  await db.ref("users/"+n).set(true);
+
+  username=n;
+  localStorage.setItem("name",username);
+  localStorage.setItem("nameChanged","true");
+  nameChanged=true;
+
+  updateTop();
+}
+
+// ============ SEND ============
+function send(){
+  let m=msg.value.trim();
+  if(!m)return;
+  db.ref("global").push({
+    user:username,
+    uid:uid,
+    text:m,
+    time:Date.now()
+  });
+  msg.value="";
+}
+
+// ============ CHAT ============
+db.ref("global").limitToLast(100).on("child_added",snap=>{
+  let d=snap.val();
+  let key=snap.key;
+
+  let div=document.createElement("div");
+  let cls=d.user===username?"me":"other";
+  if(EXCLUSIVE_USERS[d.user])cls+=" exclusive";
+  div.className="bubble "+cls;
+
+  let ver=VERIFIED_USERS[d.user]
+    ? `<img src="${VERIFY_ICON}" class="verify">`
+    : "";
+
+  div.innerHTML=`
+    <div class="username">${d.user}${ver}</div>
+    ${d.text}
+  `;
+
+  // hapus pesan sendiri
+  if(d.uid===uid){
+    div.onclick=()=>{
+      if(confirm("Hapus pesan ini?")){
+        db.ref("global/"+key).remove();
+        div.remove();
+      }
+    };
+  }
+
+  chat.appendChild(div);
+  chat.scrollTop=chat.scrollHeight;
+});
+</script>
+
+</body>
+</html>
